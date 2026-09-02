@@ -1,0 +1,30 @@
+{
+  "split": "train",
+  "num_images": 6471,
+  "total_objects": 343204,
+  "avg_objects_per_image": 53.037243084530985,
+  "small_objects": 207524,
+  "small_object_fraction": 0.6046666122772462,
+  "class_counts": {
+    "pedestrian": 79337,
+    "people": 27059,
+    "bicycle": 10480,
+    "car": 144866,
+    "van": 24956,
+    "truck": 12875,
+    "tricycle": 4812,
+    "awning-tricycle": 3246,
+    "bus": 5926,
+    "motor": 29647
+  },
+  "box_width": {
+    "min": 2,
+    "max": 983,
+    "mean": 38.59375764851225
+  },
+  "box_height": {
+    "min": 1,
+    "max": 790,
+    "mean": 37.40426393631776
+  }
+}
