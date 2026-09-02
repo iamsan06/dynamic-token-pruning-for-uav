@@ -28,6 +28,7 @@ class VisDroneDataset(Dataset):
         self.image_dir = (
             self.root / f"VisDrone2019-DET-{split}" / "images"
         )
+
         self.annotation_dir = (
             self.root / f"VisDrone2019-DET-{split}" / "annotations"
         )
@@ -58,12 +59,20 @@ class VisDroneDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # ---------------------------------------------------------
-        # Load annotations
+        # Annotation path
         # ---------------------------------------------------------
         annotation_path = (
             self.annotation_dir / f"{image_path.stem}.txt"
         )
 
+        if not annotation_path.exists():
+            raise RuntimeError(
+                f"Annotation file not found: {annotation_path}"
+            )
+
+        # ---------------------------------------------------------
+        # Load annotations
+        # ---------------------------------------------------------
         boxes = []
         labels = []
 
@@ -71,6 +80,7 @@ class VisDroneDataset(Dataset):
             for line in f:
                 parts = line.strip().split(",")
 
+                # Ignore malformed annotation lines
                 if len(parts) < 8:
                     continue
 
@@ -86,18 +96,18 @@ class VisDroneDataset(Dataset):
                 ) = map(int, parts[:8])
 
                 # -------------------------------------------------
-                # Ignore score == 0 annotations
+                # Ignore score == 0
                 #
-                # VisDrone uses score == 0 for annotations that
-                # should not be used as training objects.
+                # These annotations are not valid training targets.
                 # -------------------------------------------------
                 if score == 0:
                     continue
 
                 # -------------------------------------------------
-                # Ignore category 0 and category 11
+                # Ignore categories outside 1-10
                 #
-                # Only categories 1-10 are valid detection classes.
+                # This removes category 0 (ignored region) and
+                # category 11 (others).
                 # -------------------------------------------------
                 if category not in CATEGORY_MAP:
                     continue
@@ -105,14 +115,20 @@ class VisDroneDataset(Dataset):
                 # -------------------------------------------------
                 # Ignore malformed bounding boxes
                 #
-                # This handles the 3 problematic VisDrone boxes
-                # found during dataset verification.
+                # This handles the 3 zero-height annotations found
+                # in the VisDrone training split.
                 # -------------------------------------------------
                 if w <= 0 or h <= 0:
                     continue
 
                 # -------------------------------------------------
-                # Convert xywh -> xyxy
+                # Convert VisDrone format:
+                #
+                #     x, y, width, height
+                #
+                # to:
+                #
+                #     x1, y1, x2, y2
                 # -------------------------------------------------
                 x1 = x
                 y1 = y
@@ -123,24 +139,42 @@ class VisDroneDataset(Dataset):
                 labels.append(CATEGORY_MAP[category])
 
         # ---------------------------------------------------------
-        # Convert to tensors BEFORE transform
-        #
-        # Keeping labels alongside boxes allows us to maintain
-        # boxes/labels correspondence if a transform removes
-        # invalid boxes.
+        # Convert annotations to tensors
         # ---------------------------------------------------------
-        boxes = torch.tensor(
-            boxes,
-            dtype=torch.float32,
-        )
+        #
+        # Explicit shapes are important for images containing
+        # zero valid objects.
+        # ---------------------------------------------------------
+        if boxes:
+            boxes = torch.tensor(
+                boxes,
+                dtype=torch.float32,
+            )
+        else:
+            boxes = torch.empty(
+                (0, 4),
+                dtype=torch.float32,
+            )
 
-        labels = torch.tensor(
-            labels,
-            dtype=torch.long,
-        )
+        if labels:
+            labels = torch.tensor(
+                labels,
+                dtype=torch.long,
+            )
+        else:
+            labels = torch.empty(
+                (0,),
+                dtype=torch.long,
+            )
 
         # ---------------------------------------------------------
         # Apply transforms
+        # ---------------------------------------------------------
+        #
+        # IMPORTANT:
+        # The transform receives labels together with boxes so that
+        # if augmentation removes a box, its corresponding label is
+        # removed as well.
         # ---------------------------------------------------------
         if self.transform is not None:
             image, boxes, labels = self.transform(
@@ -152,15 +186,20 @@ class VisDroneDataset(Dataset):
         # ---------------------------------------------------------
         # Convert image to PyTorch tensor
         # ---------------------------------------------------------
-        image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
+        image = torch.from_numpy(image).permute(
+            2, 0, 1
+        ).float() / 255.0
 
         # ---------------------------------------------------------
-        # Final target
+        # Final target dictionary
         # ---------------------------------------------------------
         target = {
             "boxes": boxes,
             "labels": labels,
-            "image_id": torch.tensor(index),
+            "image_id": torch.tensor(
+                index,
+                dtype=torch.long,
+            ),
         }
 
         return image, target
