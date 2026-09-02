@@ -45,6 +45,9 @@ class VisDroneDataset(Dataset):
     def __getitem__(self, index):
         image_path = self.images[index]
 
+        # ---------------------------------------------------------
+        # Load image
+        # ---------------------------------------------------------
         image = cv2.imread(str(image_path))
 
         if image is None:
@@ -54,6 +57,9 @@ class VisDroneDataset(Dataset):
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+        # ---------------------------------------------------------
+        # Load annotations
+        # ---------------------------------------------------------
         annotation_path = (
             self.annotation_dir / f"{image_path.stem}.txt"
         )
@@ -68,17 +74,46 @@ class VisDroneDataset(Dataset):
                 if len(parts) < 8:
                     continue
 
-                x, y, w, h, score, category, truncation, occlusion = map(
-                    int, parts[:8]
-                )
+                (
+                    x,
+                    y,
+                    w,
+                    h,
+                    score,
+                    category,
+                    truncation,
+                    occlusion,
+                ) = map(int, parts[:8])
 
-                # Ignore region and "others"
+                # -------------------------------------------------
+                # Ignore score == 0 annotations
+                #
+                # VisDrone uses score == 0 for annotations that
+                # should not be used as training objects.
+                # -------------------------------------------------
+                if score == 0:
+                    continue
+
+                # -------------------------------------------------
+                # Ignore category 0 and category 11
+                #
+                # Only categories 1-10 are valid detection classes.
+                # -------------------------------------------------
                 if category not in CATEGORY_MAP:
                     continue
 
+                # -------------------------------------------------
+                # Ignore malformed bounding boxes
+                #
+                # This handles the 3 problematic VisDrone boxes
+                # found during dataset verification.
+                # -------------------------------------------------
                 if w <= 0 or h <= 0:
                     continue
 
+                # -------------------------------------------------
+                # Convert xywh -> xyxy
+                # -------------------------------------------------
                 x1 = x
                 y1 = y
                 x2 = x + w
@@ -87,14 +122,44 @@ class VisDroneDataset(Dataset):
                 boxes.append([x1, y1, x2, y2])
                 labels.append(CATEGORY_MAP[category])
 
+        # ---------------------------------------------------------
+        # Convert to tensors BEFORE transform
+        #
+        # Keeping labels alongside boxes allows us to maintain
+        # boxes/labels correspondence if a transform removes
+        # invalid boxes.
+        # ---------------------------------------------------------
+        boxes = torch.tensor(
+            boxes,
+            dtype=torch.float32,
+        )
+
+        labels = torch.tensor(
+            labels,
+            dtype=torch.long,
+        )
+
+        # ---------------------------------------------------------
+        # Apply transforms
+        # ---------------------------------------------------------
         if self.transform is not None:
-            image, boxes = self.transform(image, boxes)
-        
+            image, boxes, labels = self.transform(
+                image,
+                boxes,
+                labels,
+            )
+
+        # ---------------------------------------------------------
+        # Convert image to PyTorch tensor
+        # ---------------------------------------------------------
         image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
 
+        # ---------------------------------------------------------
+        # Final target
+        # ---------------------------------------------------------
         target = {
-            "boxes": torch.tensor(boxes, dtype=torch.float32),
-            "labels": torch.tensor(labels, dtype=torch.long),
+            "boxes": boxes,
+            "labels": labels,
             "image_id": torch.tensor(index),
         }
 
