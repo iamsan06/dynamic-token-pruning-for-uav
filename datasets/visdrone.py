@@ -114,9 +114,6 @@ class VisDroneDataset(Dataset):
 
                 # -------------------------------------------------
                 # Ignore malformed bounding boxes
-                #
-                # This handles the 3 zero-height annotations found
-                # in the VisDrone training split.
                 # -------------------------------------------------
                 if w <= 0 or h <= 0:
                     continue
@@ -171,10 +168,10 @@ class VisDroneDataset(Dataset):
         # Apply transforms
         # ---------------------------------------------------------
         #
-        # IMPORTANT:
-        # The transform receives labels together with boxes so that
-        # if augmentation removes a box, its corresponding label is
-        # removed as well.
+        # TrainTransforms works internally with NumPy arrays,
+        # so it returns boxes and labels as NumPy arrays.
+        # Convert them back to PyTorch tensors afterward so that
+        # the dataset always returns tensor targets.
         # ---------------------------------------------------------
         if self.transform is not None:
             image, boxes, labels = self.transform(
@@ -182,6 +179,9 @@ class VisDroneDataset(Dataset):
                 boxes,
                 labels,
             )
+
+            boxes = torch.from_numpy(boxes).float()
+            labels = torch.from_numpy(labels).long()
 
         # ---------------------------------------------------------
         # Convert image to PyTorch tensor
