@@ -4,7 +4,6 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 
-
 CATEGORY_MAP = {
     1: 0,  # pedestrian
     2: 1,  # people
@@ -17,7 +16,6 @@ CATEGORY_MAP = {
     9: 8,  # bus
     10: 9,  # motor
 }
-
 
 class VisDroneDataset(Dataset):
     def __init__(self, root, split="train", transform=None):
@@ -46,9 +44,7 @@ class VisDroneDataset(Dataset):
     def __getitem__(self, index):
         image_path = self.images[index]
 
-        # ---------------------------------------------------------
-        # Load image
-        # ---------------------------------------------------------
+
         image = cv2.imread(str(image_path))
 
         if image is None:
@@ -58,9 +54,7 @@ class VisDroneDataset(Dataset):
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # ---------------------------------------------------------
-        # Annotation path
-        # ---------------------------------------------------------
+
         annotation_path = (
             self.annotation_dir / f"{image_path.stem}.txt"
         )
@@ -70,9 +64,6 @@ class VisDroneDataset(Dataset):
                 f"Annotation file not found: {annotation_path}"
             )
 
-        # ---------------------------------------------------------
-        # Load annotations
-        # ---------------------------------------------------------
         boxes = []
         labels = []
 
@@ -95,38 +86,16 @@ class VisDroneDataset(Dataset):
                     occlusion,
                 ) = map(int, parts[:8])
 
-                # -------------------------------------------------
-                # Ignore score == 0
-                #
-                # These annotations are not valid training targets.
-                # -------------------------------------------------
                 if score == 0:
                     continue
 
-                # -------------------------------------------------
-                # Ignore categories outside 1-10
-                #
-                # This removes category 0 (ignored region) and
-                # category 11 (others).
-                # -------------------------------------------------
                 if category not in CATEGORY_MAP:
                     continue
 
-                # -------------------------------------------------
-                # Ignore malformed bounding boxes
-                # -------------------------------------------------
                 if w <= 0 or h <= 0:
                     continue
 
-                # -------------------------------------------------
-                # Convert VisDrone format:
-                #
-                #     x, y, width, height
-                #
-                # to:
-                #
-                #     x1, y1, x2, y2
-                # -------------------------------------------------
+                
                 x1 = x
                 y1 = y
                 x2 = x + w
@@ -168,10 +137,11 @@ class VisDroneDataset(Dataset):
         # Apply transforms
         # ---------------------------------------------------------
         #
-        # TrainTransforms works internally with NumPy arrays,
-        # so it returns boxes and labels as NumPy arrays.
-        # Convert them back to PyTorch tensors afterward so that
-        # the dataset always returns tensor targets.
+        # TrainTransforms may return boxes/labels as either NumPy
+        # arrays or PyTorch tensors depending on the code path.
+        # torch.as_tensor() accepts both, unlike torch.from_numpy()
+        # which requires a NumPy array and raises TypeError on a
+        # Tensor input.
         # ---------------------------------------------------------
         if self.transform is not None:
             image, boxes, labels = self.transform(
@@ -180,8 +150,8 @@ class VisDroneDataset(Dataset):
                 labels,
             )
 
-            boxes = torch.from_numpy(boxes).float()
-            labels = torch.from_numpy(labels).long()
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            labels = torch.as_tensor(labels, dtype=torch.long)
 
         # ---------------------------------------------------------
         # Convert image to PyTorch tensor
