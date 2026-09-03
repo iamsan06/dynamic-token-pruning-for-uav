@@ -1,0 +1,31 @@
+model:
+  backbone: swin_t
+  pretrained: checkpoints/swin_t_imagenet_backbone.pt
+  fpn_channels: 256
+  num_classes: 10
+
+data:
+  root: data/raw/VisDrone2019-DET
+  input_size: 640
+  batch_size: 16
+  num_workers: 8
+
+optim:
+  name: adamw
+  lr: 1.0e-3
+  min_lr: 1.0e-5
+  weight_decay: 5.0e-4
+  warmup_epochs: 3
+  schedule: cosine
+  epochs: 25
+  early_stopping_patience: 6
+  amp: true
+
+loss:
+  lambda_cls: 1.0
+  lambda_loc: 2.0
+  lambda_ctr: 1.0
+
+checkpoint:
+  dir: checkpoints/baseline
+  save_every: 5
