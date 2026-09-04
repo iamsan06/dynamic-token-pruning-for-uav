@@ -104,13 +104,7 @@ class VisDroneDataset(Dataset):
                 boxes.append([x1, y1, x2, y2])
                 labels.append(CATEGORY_MAP[category])
 
-        # ---------------------------------------------------------
-        # Convert annotations to tensors
-        # ---------------------------------------------------------
-        #
-        # Explicit shapes are important for images containing
-        # zero valid objects.
-        # ---------------------------------------------------------
+
         if boxes:
             boxes = torch.tensor(
                 boxes,
@@ -132,17 +126,6 @@ class VisDroneDataset(Dataset):
                 (0,),
                 dtype=torch.long,
             )
-
-        # ---------------------------------------------------------
-        # Apply transforms
-        # ---------------------------------------------------------
-        #
-        # TrainTransforms may return boxes/labels as either NumPy
-        # arrays or PyTorch tensors depending on the code path.
-        # torch.as_tensor() accepts both, unlike torch.from_numpy()
-        # which requires a NumPy array and raises TypeError on a
-        # Tensor input.
-        # ---------------------------------------------------------
         if self.transform is not None:
             image, boxes, labels = self.transform(
                 image,

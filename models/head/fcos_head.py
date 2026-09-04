@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class FCOSHead(nn.Module):
@@ -152,30 +153,37 @@ class FCOSHead(nn.Module):
 
             # Regression distances must be positive.
             #
-            # FIX: torch.relu(bbox_reg) previously produced two
-            # compounding problems:
-            #   1. ~50% of output units start with a negative
-            #      pre-activation (small std=0.01 init, zero bias)
-            #      and are permanently dead under ReLU -- zero
-            #      gradient forever, since ReLU'(x)=0 for x<0.
-            #   2. The surviving positive units start at ~1e-2,
-            #      four orders of magnitude below the pixel-scale
-            #      l/t/r/b targets (tens to hundreds of pixels),
-            #      with no exponential/scale term to bridge that
-            #      gap.
+            # HISTORY:
+            #   v1 (torch.relu(bbox_reg)):
+            #     ~50% of units start with negative pre-activation
+            #     and are permanently dead under ReLU (zero gradient
+            #     for x<0, forever). Predicted boxes collapsed to
+            #     near-zero-area points; DIoU floored near 1.0 and
+            #     never improved.
             #
-            # Together these collapsed every predicted box to a
-            # near-zero-area point at its feature location, so
-            # DIoU loss floored near 1.0 and never improved even
-            # though gradients were technically flowing.
+            #   v2 (torch.exp(bbox_reg.clamp(min=-6, max=6))):
+            #     Fixed the dead-unit problem, but torch.clamp has an
+            #     EXACT zero gradient outside its bounds. Once the
+            #     pre-clamp value exceeded +6 (which happened for
+            #     essentially every position within ~150-200 iters,
+            #     given raw pixel-scale DIoU gradients hitting small
+            #     init weights), gradient through the clamp became
+            #     permanently 0 -- freezing the entire bbox_reg
+            #     pathway's weights bit-for-bit, which is exactly the
+            #     "box loss frozen to 6 decimal places" symptom.
             #
-            # torch.exp has no dead zone (gradient is nonzero
-            # everywhere) and naturally represents a wide positive
-            # range from a near-zero input. The clamp keeps the
-            # exponential numerically stable early in training
-            # (bounds output to ~[0.0025, 403] px, which comfortably
-            # covers all four FPN levels' regression ranges).
-            bbox_reg = torch.exp(bbox_reg.clamp(min=-6.0, max=6.0))
+            #   v3 (this one): F.softplus(bbox_reg)
+            #     - Always positive (log(1+e^x) > 0 for all x).
+            #     - Gradient is sigmoid(x), which lies in the OPEN
+            #       interval (0, 1) for every finite x -- there is no
+            #       hard-zero-gradient region in either direction, so
+            #       weights can never get permanently stuck the way
+            #       ReLU or a hard clamp allowed.
+            #     - Grows ~linearly for large x (softplus(x) -> x),
+            #       instead of exploding exponentially like raw exp,
+            #       so it self-stabilizes without needing an
+            #       artificial clamp.
+            bbox_reg = F.softplus(bbox_reg)
 
             centerness = self.centerness(bbox_features)
 
