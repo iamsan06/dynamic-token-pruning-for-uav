@@ -151,7 +151,31 @@ class FCOSHead(nn.Module):
             bbox_reg = self.bbox_reg(bbox_features)
 
             # Regression distances must be positive.
-            bbox_reg = torch.relu(bbox_reg)
+            #
+            # FIX: torch.relu(bbox_reg) previously produced two
+            # compounding problems:
+            #   1. ~50% of output units start with a negative
+            #      pre-activation (small std=0.01 init, zero bias)
+            #      and are permanently dead under ReLU -- zero
+            #      gradient forever, since ReLU'(x)=0 for x<0.
+            #   2. The surviving positive units start at ~1e-2,
+            #      four orders of magnitude below the pixel-scale
+            #      l/t/r/b targets (tens to hundreds of pixels),
+            #      with no exponential/scale term to bridge that
+            #      gap.
+            #
+            # Together these collapsed every predicted box to a
+            # near-zero-area point at its feature location, so
+            # DIoU loss floored near 1.0 and never improved even
+            # though gradients were technically flowing.
+            #
+            # torch.exp has no dead zone (gradient is nonzero
+            # everywhere) and naturally represents a wide positive
+            # range from a near-zero input. The clamp keeps the
+            # exponential numerically stable early in training
+            # (bounds output to ~[0.0025, 403] px, which comfortably
+            # covers all four FPN levels' regression ranges).
+            bbox_reg = torch.exp(bbox_reg.clamp(min=-6.0, max=6.0))
 
             centerness = self.centerness(bbox_features)
 
