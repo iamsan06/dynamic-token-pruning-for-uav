@@ -4,27 +4,7 @@ import torch.nn.functional as F
 
 
 class FCOSHead(nn.Module):
-    """
-    FCOS detection head shared across all FPN levels.
-
-    Input:
-        List of FPN feature maps:
-        [
-            [B, 256, H3, W3],
-            [B, 256, H4, W4],
-            [B, 256, H5, W5],
-            [B, 256, H6, W6],
-        ]
-
-    Output:
-        A list of dictionaries, one per FPN level:
-        {
-            "cls_logits": [B, num_classes, H, W],
-            "bbox_reg":   [B, 4, H, W],
-            "centerness": [B, 1, H, W],
-        }
-    """
-
+    
     def __init__(
         self,
         in_channels=256,
@@ -151,38 +131,7 @@ class FCOSHead(nn.Module):
 
             bbox_reg = self.bbox_reg(bbox_features)
 
-            # Regression distances must be positive.
-            #
-            # HISTORY:
-            #   v1 (torch.relu(bbox_reg)):
-            #     ~50% of units start with negative pre-activation
-            #     and are permanently dead under ReLU (zero gradient
-            #     for x<0, forever). Predicted boxes collapsed to
-            #     near-zero-area points; DIoU floored near 1.0 and
-            #     never improved.
-            #
-            #   v2 (torch.exp(bbox_reg.clamp(min=-6, max=6))):
-            #     Fixed the dead-unit problem, but torch.clamp has an
-            #     EXACT zero gradient outside its bounds. Once the
-            #     pre-clamp value exceeded +6 (which happened for
-            #     essentially every position within ~150-200 iters,
-            #     given raw pixel-scale DIoU gradients hitting small
-            #     init weights), gradient through the clamp became
-            #     permanently 0 -- freezing the entire bbox_reg
-            #     pathway's weights bit-for-bit, which is exactly the
-            #     "box loss frozen to 6 decimal places" symptom.
-            #
-            #   v3 (this one): F.softplus(bbox_reg)
-            #     - Always positive (log(1+e^x) > 0 for all x).
-            #     - Gradient is sigmoid(x), which lies in the OPEN
-            #       interval (0, 1) for every finite x -- there is no
-            #       hard-zero-gradient region in either direction, so
-            #       weights can never get permanently stuck the way
-            #       ReLU or a hard clamp allowed.
-            #     - Grows ~linearly for large x (softplus(x) -> x),
-            #       instead of exploding exponentially like raw exp,
-            #       so it self-stabilizes without needing an
-            #       artificial clamp.
+            
             bbox_reg = F.softplus(bbox_reg)
 
             centerness = self.centerness(bbox_features)

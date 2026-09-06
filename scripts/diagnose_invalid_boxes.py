@@ -6,7 +6,6 @@ ROOT = Path("data/raw/VisDrone2019-DET")
 
 SPLITS = ["train", "val", "test-dev"]
 
-
 for split in SPLITS:
     image_dir = ROOT / f"VisDrone2019-DET-{split}" / "images"
     annotation_dir = ROOT / f"VisDrone2019-DET-{split}" / "annotations"
